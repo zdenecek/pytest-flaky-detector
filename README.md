@@ -55,7 +55,8 @@ It helps identify and debug non-deterministic behavior in your tests.
 Run Pytest with the plugin enabled using the `--detect-flaky` option:
 
 ```bash
-pytest --detect-flaky
+pytest -p pytest_flaky_detector.flaky_tester --detect-flaky
+
 ```
 
 ### Additional Options

@@ -2,6 +2,17 @@ import pytest
 import random
 from datetime import datetime
 from freezegun import freeze_time
+from _pytest.runner import runtestprotocol
+
+
+def get_outcome_from_reports(reports):
+    """Extract the outcome ('passed', 'failed', 'skipped') from test reports."""
+    for report in reports:
+        if report.failed:
+            return 'failed'
+        elif report.skipped:
+            return 'skipped'
+    return 'passed'
 
 
 class FlakyTestDetector:
@@ -9,8 +20,12 @@ class FlakyTestDetector:
         self.config = config
         self.flaky_tests = {}
         self.reorder_runs = config.getoption("--reorder-runs", default=3)
-        self.time_freeze_times = config.getoption("--time-freeze-values", default="2024-01-01,2024-12-31").split(",")
-        self.random_seeds = config.getoption("--random-seeds", default="42,123,999").split(",")
+        self.time_freeze_times = config.getoption(
+            "--time-freeze-values", default="2024-01-01,2024-12-31"
+        ).split(",")
+        self.random_seeds = config.getoption(
+            "--random-seeds", default="42,123,999"
+        ).split(",")
 
     def record_test_result(self, nodeid, outcome):
         if nodeid not in self.flaky_tests:
@@ -21,14 +36,65 @@ class FlakyTestDetector:
         outcomes = self.flaky_tests.get(nodeid, set())
         return len(outcomes) > 1  # Flaky if it produces more than one outcome
 
+    @pytest.hookimpl
+    def pytest_runtest_protocol(self, item, nextitem):
+        if not self.config.getoption("--detect-flaky"):
+            return None
+
+        flaky_nodeid = item.nodeid
+        outcomes = set()
+
+        # Original run
+        reports = runtestprotocol(item, log=False)
+        outcome = get_outcome_from_reports(reports)
+        outcomes.add(outcome)
+        self.record_test_result(flaky_nodeid, outcome)
+
+        # Reordering runs (may not affect a single test item)
+        for _ in range(self.reorder_runs):
+            reports = runtestprotocol(item, log=False)
+            outcome = get_outcome_from_reports(reports)
+            outcomes.add(outcome)
+            self.record_test_result(flaky_nodeid, outcome)
+
+        # Time freezing runs
+        for time_str in self.time_freeze_times:
+            with freeze_time(time_str):
+                reports = runtestprotocol(item, log=False)
+                outcome = get_outcome_from_reports(reports)
+                outcomes.add(outcome)
+                self.record_test_result(flaky_nodeid, outcome)
+
+        # Random seed runs
+        for seed in self.random_seeds:
+            random.seed(int(seed))
+            reports = runtestprotocol(item, log=False)
+            outcome = get_outcome_from_reports(reports)
+            outcomes.add(outcome)
+            self.record_test_result(flaky_nodeid, outcome)
+
+        if len(outcomes) > 1:
+            print(
+                f"Detected flaky test: {flaky_nodeid} with outcomes: {outcomes}"
+            )
+
+        return True  # Skip normal test execution
+
 
 def pytest_addoption(parser):
-    """Add options for flaky test detection."""
+    """Add command-line options for flaky test detection."""
     parser.addoption(
-        "--detect-flaky", action="store_true", default=False, help="Enable flaky test detection."
+        "--detect-flaky",
+        action="store_true",
+        default=False,
+        help="Enable flaky test detection.",
     )
     parser.addoption(
-        "--reorder-runs", action="store", default=3, type=int, help="Number of reordering runs for flaky test detection."
+        "--reorder-runs",
+        action="store",
+        default=3,
+        type=int,
+        help="Number of reordering runs for flaky test detection.",
     )
     parser.addoption(
         "--time-freeze-values",
@@ -44,53 +110,7 @@ def pytest_addoption(parser):
     )
 
 
-@pytest.hookimpl
 def pytest_configure(config):
     if config.getoption("--detect-flaky"):
         detector = FlakyTestDetector(config)
         config.pluginmanager.register(detector, "flaky_test_detector")
-
-
-@pytest.hookimpl
-def pytest_runtest_protocol(item, nextitem):
-    detector = item.config.pluginmanager.get_plugin("flaky_test_detector")
-    if not detector:
-        return None
-
-    flaky_nodeid = item.nodeid
-
-    # Detect flakiness by reordering
-    for _ in range(detector.reorder_runs):
-        reordered_item = reorder_test([item])
-        run_test(item, detector, flaky_nodeid)
-
-    # Detect flakiness by freezing time
-    for time in detector.time_freeze_times:
-        with freeze_time(time):
-            run_test(item, detector, flaky_nodeid)
-
-    # Detect flakiness by seeding random
-    for seed in detector.random_seeds:
-        random.seed(int(seed))
-        run_test(item, detector, flaky_nodeid)
-
-    if detector.is_flaky(flaky_nodeid):
-        print(f"Detected flaky test: {flaky_nodeid} with outcomes: {detector.flaky_tests[flaky_nodeid]}")
-
-    return True
-
-
-def reorder_test(items):
-    """Reorder tests randomly."""
-    reordered = items[:]
-    random.shuffle(reordered)
-    return reordered
-
-
-def run_test(item, detector, flaky_nodeid):
-    """Run a single test item."""
-    item.ihook.pytest_runtest_setup(item=item)
-    reports = item.ihook.pytest_runtest_call(item=item)
-    for report in reports:
-        detector.record_test_result(flaky_nodeid, report.outcome)
-    item.ihook.pytest_runtest_teardown(item=item)

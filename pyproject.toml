@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "pytest-flaky-detector"
+name = "pytest_flaky_detector"
 version = "0.1.0"
 description = "Detect flaky tests"
 authors = ["Zdeněk Tomis, Jan Franek"]
@@ -15,3 +15,6 @@ freezegun = "^1.5.1"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[project.entry-points.pytest11]
+pytest-flaky-detector = "pytest_flaky_detector.flaky_tester"
