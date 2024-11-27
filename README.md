@@ -1,139 +1,123 @@
-### Updated README for `pytest-myplugin`
 
----
 
-# `pytest-myplugin`
+# Flaky Test Detection Plugin for Pytest
 
-`pytest-myplugin` is a Pytest plugin designed to detect flaky tests caused by:
-
-1. **Reordering tests**: Runs the test suite in different orders.
-2. **Freezing time**: Runs the tests with fixed and variable times.
-3. **Seeding the random number generator**: Runs the tests with different random seeds.
-
-It helps identify and debug non-deterministic behavior in your tests.
+This plugin detects flaky tests by re-running them under different conditions such as randomized execution order, specific random seeds, and frozen times. Flaky tests are those that yield inconsistent results (`passed`, `failed`) when executed multiple times.
 
 ---
 
 ## Features
 
-- **Reorder tests**: Runs the tests multiple times in random orders to detect flakiness.
-- **Time freezing**: Simulates different times during test execution using `freezegun`.
-- **Random seeding**: Reruns tests with various random seeds to detect RNG-related flakiness.
-- Outputs flaky test information including outcomes and reasons.
+- **Random Seed Testing**: Re-runs tests with different random seeds to detect flakiness caused by randomness.
+- **Time Freezing**: Re-runs tests with frozen system times to detect flakiness caused by time-dependent logic.
+- **Reordering Runs**: Re-runs tests multiple times to detect non-deterministic behavior.
 
 ---
 
 ## Installation
 
-### Local Installation for Development
+This plugin requires **pytest** and **freezegun**. Install the dependencies using:
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/pytest-myplugin.git
-   cd pytest-myplugin
-   ```
+```bash
+pip install pytest freezegun
+```
 
-2. Install dependencies using Poetry:
-   ```bash
-   poetry install
-   ```
-
-3. Build the package:
-   ```bash
-   poetry build
-   ```
-
-4. Install the plugin locally:
-   ```bash
-   pip install dist/pytest_myplugin-0.1.0.tar.gz
-   ```
+Add the `conftest.py` file containing the plugin code to your test directory.
 
 ---
 
 ## Usage
 
-Run Pytest with the plugin enabled using the `--detect-flaky` option:
+### Enabling Flaky Detection
+
+Run pytest with the `--detect-flaky` flag to enable flaky test detection:
 
 ```bash
-pytest -p pytest_flaky_detector.flaky_tester --detect-flaky
-
+pytest --detect-flaky
 ```
 
 ### Additional Options
 
-- `--reorder-runs=<number>`: Number of times to reorder and rerun the tests. Default is 3.
-- `--time-freeze-values=<times>`: Comma-separated list of times to freeze during test runs. Default is `"2024-01-01,2024-12-31"`.
-- `--random-seeds=<seeds>`: Comma-separated list of seeds for the random number generator. Default is `"42,123,999"`.
+You can customize the behavior of the plugin with the following options:
 
-#### Example:
+- **`--reorder-runs`**:
+  Number of times to re-run each test to detect randomness issues.
 
-```bash
-pytest --detect-flaky --reorder-runs=5 --time-freeze-values="2024-01-01,2024-06-15" --random-seeds="1,2,3,42"
-```
+  Default: `3`
+
+  Example:
+
+  ```bash
+  pytest --detect-flaky --reorder-runs=5
+  ```
+
+- **`--time-freeze-values`**:
+  Comma-separated list of frozen times to test time-sensitive logic.
+
+  Default: `2024-01-01,2024-12-31`
+
+  Example:
+
+  ```bash
+  pytest --detect-flaky --time-freeze-values="2023-01-01,2023-06-01"
+  ```
+
+- **`--random-seeds`**:
+  Comma-separated list of random seeds to test randomness-related issues.
+
+  Default: `42,123,999`
+
+  Example:
+
+  ```bash
+  pytest --detect-flaky --random-seeds="10,20,30"
+  ```
 
 ---
 
-## Testing the Plugin Locally
+## Example
 
-### Step 1: Add a Test Suite
+Here’s an example of flaky tests:
 
-Create a sample test suite (`tests/test_flaky_tester.py`) with flaky behavior to test the plugin:
+**`test_flaky.py`**
 
 ```python
-import pytest
 import random
 from datetime import datetime
 
+def test_random():
+    # Flaky: May fail for random values <= 5
+    assert random.randint(1, 10) > 5
 
-@pytest.mark.flaky
-def test_random_behavior():
-    assert random.choice([True, False])
+def test_time():
+    # Flaky: Passes only in the year 2024
+    assert datetime.now().year == 2024
 
-
-@pytest.mark.flaky
-def test_time_dependent():
-    now = datetime.now()
-    assert now.year == 2024
-
-
-@pytest.mark.flaky
-def test_order_dependent():
-    global order_count
-    order_count += 1
-    assert order_count % 2 == 0
-
-
-order_count = 0
+def test_stable():
+    # Stable: Always passes
+    assert 2 + 2 == 4
 ```
 
-### Step 2: Run the Plugin
-
-Run the plugin against the test suite:
+Run the flaky test detection:
 
 ```bash
-pytest --detect-flaky --reorder-runs=5 --time-freeze-values="2024-01-01,2024-12-31" --random-seeds="42,123,999"
+pytest --detect-flaky
 ```
 
-### Step 3: View the Output
+### Expected Output
 
-The plugin will detect flaky tests and display them in the console. For example:
-
-```
-Detected flaky test: test_random_behavior with outcomes: {'passed', 'failed'}
-Detected flaky test: test_time_dependent with outcomes: {'passed', 'failed'}
-Detected flaky test: test_order_dependent with outcomes: {'passed', 'failed'}
+```plaintext
+Detected flaky test: test_flaky.py::test_random with outcomes: {'passed', 'failed'}
+Detected flaky test: test_flaky.py::test_time with outcomes: {'passed', 'failed'}
 ```
 
 ---
 
-## Development
+## How It Works
 
-### Run Tests for the Plugin
+1. **Normal Execution**: Each test is run once to record its initial outcome.
+2. **Reorder Runs**: Tests are re-run multiple times to detect non-deterministic behavior.
+3. **Frozen Times**: Tests are re-run with fixed system times to identify time-sensitive logic.
+4. **Random Seeds**: Tests are re-run with different random seeds to expose randomness-induced flakiness.
 
-Run tests for the plugin using:
-
-```bash
-poetry run pytest
-```
-
----
+If a test produces more than one unique outcome (`passed`, `failed`), it is flagged as **flaky**.
