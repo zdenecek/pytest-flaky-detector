@@ -52,17 +52,6 @@ def pytest_configure(config):
 
 
 @pytest.hookimpl
-def pytest_collection_modifyitems(session, config, items):
-    """Reorder tests randomly for flaky detection."""
-    detector = config.pluginmanager.get_plugin("flaky_test_detector")
-    if not detector:
-        return
-
-    # Shuffle test order for flaky detection
-    random.shuffle(items)
-
-
-@pytest.hookimpl
 def pytest_runtest_protocol(item, nextitem):
     detector = item.config.pluginmanager.get_plugin("flaky_test_detector")
     if not detector:
@@ -72,31 +61,36 @@ def pytest_runtest_protocol(item, nextitem):
 
     # Detect flakiness by reordering
     for _ in range(detector.reorder_runs):
-        item.ihook.pytest_runtest_setup(item=item)
-        reports = item.ihook.pytest_runtest_call(item=item)
-        for report in reports:
-            detector.record_test_result(flaky_nodeid, report.outcome)
-        item.ihook.pytest_runtest_teardown(item=item)
+        reordered_item = reorder_test([item])
+        run_test(item, detector, flaky_nodeid)
 
     # Detect flakiness by freezing time
     for time in detector.time_freeze_times:
         with freeze_time(time):
-            item.ihook.pytest_runtest_setup(item=item)
-            reports = item.ihook.pytest_runtest_call(item=item)
-            for report in reports:
-                detector.record_test_result(flaky_nodeid, report.outcome)
-            item.ihook.pytest_runtest_teardown(item=item)
+            run_test(item, detector, flaky_nodeid)
 
     # Detect flakiness by seeding random
     for seed in detector.random_seeds:
         random.seed(int(seed))
-        item.ihook.pytest_runtest_setup(item=item)
-        reports = item.ihook.pytest_runtest_call(item=item)
-        for report in reports:
-            detector.record_test_result(flaky_nodeid, report.outcome)
-        item.ihook.pytest_runtest_teardown(item=item)
+        run_test(item, detector, flaky_nodeid)
 
     if detector.is_flaky(flaky_nodeid):
         print(f"Detected flaky test: {flaky_nodeid} with outcomes: {detector.flaky_tests[flaky_nodeid]}")
 
     return True
+
+
+def reorder_test(items):
+    """Reorder tests randomly."""
+    reordered = items[:]
+    random.shuffle(reordered)
+    return reordered
+
+
+def run_test(item, detector, flaky_nodeid):
+    """Run a single test item."""
+    item.ihook.pytest_runtest_setup(item=item)
+    reports = item.ihook.pytest_runtest_call(item=item)
+    for report in reports:
+        detector.record_test_result(flaky_nodeid, report.outcome)
+    item.ihook.pytest_runtest_teardown(item=item)
