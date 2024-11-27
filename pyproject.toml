@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "pytest-flaky-detector"
+version = "0.1.0"
+description = "Detect flaky tests"
+authors = ["Zdeněk Tomis, Jan Franek"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
